@@ -4,33 +4,27 @@
             <h3 class="box-title"><a href="{{ period.route }}">{{ period.title }}</a>
             </h3>
         </div>
+
         <div class="box-body no-padding">
-            <table class="table table-hover">
+            <table class="table">
+
                 {% if period.total_transactions > 0 %}
+                <thead>
                     <tr>
-                        <td style="width:33%;">{{ 'transactions'|_ }}</td>
-                        <td style="text-align: right;">{{ period.total_transactions }}</td>
+                        <th style="text-align: left; width:20%;">{{ 'transactions'|_ }}</th>
+                        <th style="text-align: right;">{{ period.total_transactions }}</th>
+                        <th style="text-align: right;"></th>
                     </tr>
+                </thead>
                 {% endif %}
-                {% for entry in period.spent %}
-                    {% if entry.amount != 0 %}
+                
+                <tbody>
+                    {% for entry in period.earned %}
+                        {% if entry.amount != 0 %}
                         <tr>
-                            <td style="width:33%;">{{ 'spent'|_ }}</td>
+                            <td>{{ 'earned'|_ }}</td>
                             <td style="text-align: right;">
-                                <span title="{{ entry.count }}">
-                                    {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
-                                </span>
-                            </td>
-                        </tr>
-                    {% endif %}
-                {% endfor %}
-
-                {% for entry in period.earned %}
-                    {% if entry.amount != 0 %}
-                        <tr>
-                            <td style="width:33%;">{{ 'earned'|_ }}</td>
-                            <td style="text-align: right;">
-                                <span title="{{ entry.count }}">
+                                <span>
                                     {% if entry.amount < 0 %}
                                         {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
                                     {% else %}
@@ -38,58 +32,160 @@
                                     {% endif %}
                                 </span>
                             </td>
-                        </tr>
-                    {% endif %}
-                {% endfor %}
-
-                {% for entry in period.transferred %}
-                    {% if entry.amount != 0 %}
-                        <tr>
-                            <td style="width:33%;">{{ 'transferred'|_ }}</td>
                             <td style="text-align: right;">
-                                <span title="{{ entry.count }}">
-                                    {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
-                                </span>
+                                {% if entry.count > 0 %}
+                                    {% set avg_amount = (entry.amount < 0 ? entry.amount * -1 : entry.amount) / entry.count %}
+                                    {{ formatAmountBySymbol(avg_amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                {% endif %}
                             </td>
                         </tr>
-                    {% endif %}
-                {% endfor %}
+                        {% endif %}
+                    {% endfor %}
 
-                {% for entry in period.transferred_away %}
-                    {% if entry.amount != 0 %}
-                        <tr>
-                            <td style="width:33%;">{{ 'transferred_away'|_ }}</td>
-                            <td style="text-align: right;">
-                                <span title="{{ entry.count }}">
-                                    {% if entry.amount < 0 %}
-                                        {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
-                                    {% else %}
-                                        {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
+                    {% for entry in period.transferred_in %}
+                        {% if entry.amount != 0 %}
+                            <tr>
+                                <td>{{ 'transferred_in'|_ }}</td>
+                                <td style="text-align: right;">
+                                    <span>
+                                        {% if entry.amount < 0 %}
+                                            {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
+                                        {% else %}
+                                            {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td style="text-align: right;">
+                                    {% if entry.count > 0 %}
+                                        {% set avg_amount = (entry.amount < 0 ? entry.amount * -1 : entry.amount) / entry.count %}
+                                        {{ formatAmountBySymbol(avg_amount, entry.currency_symbol, entry.currency_decimal_places) }}
                                     {% endif %}
-                                </span>
-                            </td>
-                        </tr>
-                    {% endif %}
-                {% endfor %}
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
 
-                {% for entry in period.transferred_in %}
-                    {% if entry.amount != 0 %}
-                        <tr>
-                            <td style="width:33%;">{{ 'transferred_in'|_ }}</td>
-                            <td style="text-align: right;">
-                                <span title="{{ entry.count }}">
-                                    {% if entry.amount < 0 %}
-                                        {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
-                                    {% else %}
+                    {% for entry in period.spent %}
+                        {% if entry.amount != 0 %}
+                            <tr>
+                                <td>{{ 'spent'|_ }}</td>
+                                <td style="text-align: right;">
+                                    <span>
                                         {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                    </span>
+                                </td>
+                                <td style="text-align: right;">
+                                    {% if entry.count > 0 %}
+                                        {% set avg_amount = (entry.amount < 0 ? entry.amount : entry.amount * -1) / entry.count %}
+                                        {{ formatAmountBySymbol(avg_amount, entry.currency_symbol, entry.currency_decimal_places) }}
                                     {% endif %}
-                                </span>
-                            </td>
-                        </tr>
-                    {% endif %}
-                {% endfor %}
-            </table>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% for entry in period.transferred_away %}
+                        {% if entry.amount != 0 %}
+                            <tr>
+                                <td>{{ 'transferred_away'|_ }}</td>
+                                <td style="text-align: right;">
+                                    <span>
+                                        {% if entry.amount < 0 %}
+                                            {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                        {% else %}
+                                            {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td style="text-align: right;">
+                                    {% if entry.count > 0 %}
+                                        {% set avg_amount = (entry.amount < 0 ? entry.amount : entry.amount * -1) / entry.count %}
+                                        {{ formatAmountBySymbol(avg_amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% for entry in period.transferred %}
+                        {% if entry.amount != 0 %}
+                            <tr>
+                                <td>{{ 'transferred'|_ }}</td>
+                                <td style="text-align: right;">
+                                    <span>
+                                        {{ formatAmountBySymbol(entry.amount*-1, entry.currency_symbol, entry.currency_decimal_places) }}
+                                    </span>
+                                </td>
+                                <td style="text-align: right;">
+                                    {% if entry.count > 0 %}
+                                        {% set avg_amount = (entry.amount * -1) / entry.count %}
+                                        {{ formatAmountBySymbol(avg_amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% for entry in period.period_balance %}
+                        {% if entry.amount != 0 %}
+                            {% set net_earned = 0 %}
+                            {% set net_spent = 0 %}
+                            {% set net_transferred_in = 0 %}
+                            {% set net_transferred_away = 0 %}
+                            
+                            {# Calculate net amounts for each category #}
+                            {% for earned_entry in period.earned %}
+                                {% if earned_entry.currency_symbol == entry.currency_symbol %}
+                                    {% set net_earned = net_earned + (earned_entry.amount < 0 ? earned_entry.amount * -1 : earned_entry.amount) %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% for spent_entry in period.spent %}
+                                {% if spent_entry.currency_symbol == entry.currency_symbol %}
+                                    {% set net_spent = net_spent + spent_entry.amount %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% for transfer_in_entry in period.transferred_in %}
+                                {% if transfer_in_entry.currency_symbol == entry.currency_symbol %}
+                                    {% set net_transferred_in = net_transferred_in + (transfer_in_entry.amount < 0 ? transfer_in_entry.amount * -1 : transfer_in_entry.amount) %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% for transfer_away_entry in period.transferred_away %}
+                                {% if transfer_away_entry.currency_symbol == entry.currency_symbol %}
+                                    {% set net_transferred_away = net_transferred_away + (transfer_away_entry.amount < 0 ? transfer_away_entry.amount : transfer_away_entry.amount * -1) %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {# Calculate starting balance #}
+                            {% set starting_balance = entry.amount - net_earned + net_spent - net_transferred_in - net_transferred_away %}
+                                
+                            {# Net Change Line #}
+                            {% set change = net_earned + net_spent + net_transferred_in + net_transferred_away %}
+                            <tr style="border-top: 1px solid #ddd;">
+                                <td>Net Change</td>
+                                <td style="text-align: right; color: {% if change >= 0 %}#28a745{% else %}#dc3545{% endif %};">
+                                    {% if change >= 0 %}+{% endif %}{{ formatAmountBySymbol(change, entry.currency_symbol, entry.currency_decimal_places) }}
+                                </td>
+                                <td style="width:25%;"></td>
+                            </tr>
+
+                            {# Display the calculated period balance with enhanced formatting #}
+                            <tr class="period-balance-row">
+                                <td>{{ 'balance'|_ }}</td>
+                                <td style="text-align: right;">
+                                    <span title="Account balance as of period end" 
+                                            class="{% if entry.amount < 0 %}text-danger{% else %}text-success{% endif %}">
+                                        {{ formatAmountBySymbol(entry.amount, entry.currency_symbol, entry.currency_decimal_places) }}
+                                    </span>
+                                </td>
+                                <td></td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+           </table>
         </div>
     </div>
-
 {% endfor %}

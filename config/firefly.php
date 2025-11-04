@@ -71,11 +71,11 @@ return [
     // some feature flags:
     'feature_flags'                => [
         'export'                 => true,
-        'telemetry'              => false,
+        'telemetry'              => true,
         'webhooks'               => true,
         'handle_debts'           => true,
         'expression_engine'      => true,
-        'running_balance_column' => env('USE_RUNNING_BALANCE', false),
+        'running_balance_column' => env('USE_RUNNING_BALANCE', true),
         // see cer.php for exchange rates feature flag.
     ],
     'version'                      => '6.4.2',

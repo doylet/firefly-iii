@@ -88,6 +88,27 @@ Route::group(
     }
 );
 
+// Add this to routes/web.php
+// Route::get('adminer', ['uses' => AdminerController::class . '@index', 'as' => 'adminer']);
+// Route::get('adminer', ['uses' => AdminerController::class, 'as' => 'index']);
+
+// Replace with this working closure:
+Route::get('/adminer', function () {
+    $filePath = public_path('adminer.php');
+    
+    if (!file_exists($filePath)) {
+        abort(404, 'Adminer file not found');
+    }
+    
+    $content = file_get_contents($filePath);
+    
+    return response($content)
+        ->header('Content-Type', 'text/html; charset=UTF-8')
+        ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', '0');
+})->withoutMiddleware(['web']);
+
 // These routes only work when the user is NOT logged in.
 Route::group(
     ['middleware' => 'user-not-logged-in', 'namespace' => 'FireflyIII\Http\Controllers'],
