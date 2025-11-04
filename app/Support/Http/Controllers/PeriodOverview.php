@@ -109,6 +109,7 @@ trait PeriodOverview
         foreach ($dates as $currentDate) {
             $entries[] = $this->getSingleModelPeriod($account, $currentDate['period'], $currentDate['start'], $currentDate['end']);
         }
+        $entries['balance'] = Steam::finalAccountBalanceInRange($account, $start, $end, true);
         Log::debug('End of getAccountPeriodOverview()');
 
         return $entries;
@@ -319,7 +320,129 @@ trait PeriodOverview
             $return[$type] = $set;
         }
 
+        // Get the actual account balance at the end of this period (for accounts only)
+        if ($model instanceof Account) {
+            $return['period_balance'] = $this->getAccountBalanceForPeriod($model, $end);
+        } else {
+            // For non-account models (categories, tags), calculate net change
+            $return['period_balance'] = $this->calculatePeriodBalance($return);
+        }
+
         return $return;
+    }
+
+    /**
+     * Get the actual account balance at the end of a period.
+     * Returns the same format as other transaction type arrays.
+     */
+    private function getAccountBalanceForPeriod(Account $account, Carbon $date): array
+    {
+        // Get the balance at the end of this period
+        $balanceData = Steam::finalAccountBalanceInRange($account, $date, $date, true);
+        
+        $result = ['count' => 0];
+        
+        // Convert the balance data to the same format as other transaction types
+        foreach ($balanceData as $dateKey => $balances) {
+            foreach ($balances as $currencyCode => $amount) {
+                if ($currencyCode === 'balance') {
+                    continue; // Skip the main balance key
+                }
+                
+                // Get currency info - we need to find the currency by code
+                try {
+                    $currency = Amount::getTransactionCurrencyByCode($currencyCode);
+                    $currencyId = $currency->id;
+                    
+                    $result[$currencyId] = [
+                        'amount' => (string)$amount,
+                        'count' => 1, // Balance is a single "transaction"
+                        'currency_id' => $currency->id,
+                        'currency_name' => $currency->name,
+                        'currency_code' => $currency->code,
+                        'currency_symbol' => $currency->symbol,
+                        'currency_decimal_places' => $currency->decimal_places,
+                    ];
+                    $result['count'] += 1;
+                } catch (\Exception $e) {
+                    Log::warning("Could not find currency for code: {$currencyCode}");
+                    continue;
+                }
+            }
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Calculate the period balance by summing all transaction types per currency.
+     * Returns the same format as other transaction type arrays.
+     */
+    private function calculatePeriodBalance(array $periodData): array
+    {
+        $balances = ['count' => 0];
+        
+        // Helper function to add amounts by currency
+        $addToCurrency = function(array &$balances, array $entries, int $multiplier = 1) {
+            foreach ($entries as $currencyId => $entry) {
+                if ($currencyId === 'count') {
+                    continue;
+                }
+                
+                if (!isset($balances[$currencyId])) {
+                    $balances[$currencyId] = [
+                        'amount' => '0',
+                        'count' => 0,
+                        'currency_id' => $entry['currency_id'],
+                        'currency_name' => $entry['currency_name'],
+                        'currency_code' => $entry['currency_code'],
+                        'currency_symbol' => $entry['currency_symbol'],
+                        'currency_decimal_places' => $entry['currency_decimal_places'],
+                    ];
+                }
+                
+                $balances[$currencyId]['amount'] = bcadd(
+                    $balances[$currencyId]['amount'], 
+                    bcmul($entry['amount'], (string)$multiplier)
+                );
+                $balances[$currencyId]['count'] += $entry['count'];
+            }
+        };
+        
+        // Add earned and transferred_in (positive contribution to balance)
+        if (isset($periodData['earned'])) {
+            $addToCurrency($balances, $periodData['earned'], 1);
+        }
+        if (isset($periodData['transferred_in'])) {
+            $addToCurrency($balances, $periodData['transferred_in'], 1);
+        }
+        
+        // Subtract spent and transferred_away (negative contribution to balance)
+        if (isset($periodData['spent'])) {
+            // Spent amounts are typically positive values representing outgoing money
+            // We need to subtract them, so multiply by -1
+            $addToCurrency($balances, $periodData['spent'], -1);
+        }
+        if (isset($periodData['transferred_away'])) {
+            // Transferred away amounts are typically positive values representing outgoing money
+            // We need to subtract them, so multiply by -1
+            $addToCurrency($balances, $periodData['transferred_away'], -1);
+        }
+        
+        // Calculate total count and remove zero balances
+        foreach ($balances as $currencyId => $entry) {
+            if ($currencyId === 'count') {
+                continue;
+            }
+            
+            if (bccomp($entry['amount'], '0') === 0) {
+                unset($balances[$currencyId]);
+            } else {
+                $balances['count'] += $entry['count'];
+            }
+        }
+        
+        return $balances;
     }
 
     private function filterStatistics(Carbon $start, Carbon $end, string $type): Collection
