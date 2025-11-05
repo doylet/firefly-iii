@@ -456,7 +456,7 @@ a:focus {
   left: 0;
   padding-top: 50px;
   min-height: 100%;
-  width: 230px;
+  width: 200px;
   z-index: 810;
   -webkit-transition: -webkit-transform 0.3s ease-in-out, width 0.3s ease-in-out;
   -moz-transition: -moz-transform 0.3s ease-in-out, width 0.3s ease-in-out;

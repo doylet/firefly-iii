@@ -254,6 +254,26 @@ trait PeriodOverview
                                     'earned'             => $groupedEarned,
                                     'transferred'        => $groupedTransferred,
                                 ];
+            
+            // For no-model periods, calculate a simple period balance
+            $entry['period_balance'] = $this->calculatePeriodBalance($entry);
+            
+            // Calculate opening balance for this period  
+            $entry['opening_balance'] = $this->calculateOpeningBalance($entry);
+            
+            // Calculate net change for this period
+            $entry['net_change'] = $this->calculateNetChange($entry);
+            
+            // Calculate financial metrics for this period
+            // Note: For no-model periods, we use 'transferred' instead of 'transferred_in' and 'transferred_away'
+            $metricsData = [
+                'spent' => $groupedSpent,
+                'earned' => $groupedEarned,
+                'transferred_in' => [], // No separate in/out for no-model
+                'transferred_away' => $groupedTransferred,
+            ];
+            $entry['period_metrics'] = $this->calculatePeriodMetrics($metricsData, $start, $end);
+            
             $this->saveGroupedForPrefix(sprintf('no_%s', $model), $start, $end, 'spent', $groupedSpent);
             $this->saveGroupedForPrefix(sprintf('no_%s', $model), $start, $end, 'earned', $groupedEarned);
             $this->saveGroupedForPrefix(sprintf('no_%s', $model), $start, $end, 'transferred', $groupedTransferred);
@@ -300,6 +320,25 @@ trait PeriodOverview
 
         }
 
+        // Calculate period balance for this no-model entry
+        $entry['period_balance'] = $this->calculatePeriodBalance($entry);
+        
+        // Calculate opening balance for this period
+        $entry['opening_balance'] = $this->calculateOpeningBalance($entry);
+
+        // Calculate net change for this period
+        $entry['net_change'] = $this->calculateNetChange($entry);
+
+        // Calculate financial metrics for this period
+        // Note: For no-model periods, we use 'transferred' instead of 'transferred_in' and 'transferred_away'
+        $metricsData = [
+            'spent' => $entry['spent'],
+            'earned' => $entry['earned'],
+            'transferred_in' => [], // No separate in/out for no-model
+            'transferred_away' => $entry['transferred'],
+        ];
+        $entry['period_metrics'] = $this->calculatePeriodMetrics($metricsData, $start, $end);
+
         return $entry;
     }
 
@@ -328,6 +367,15 @@ trait PeriodOverview
             $return['period_balance'] = $this->calculatePeriodBalance($return);
         }
 
+        // Calculate opening balance for this period
+        $return['opening_balance'] = $this->calculateOpeningBalance($return);
+
+        // Calculate net change for this period
+        $return['net_change'] = $this->calculateNetChange($return);
+
+        // Calculate financial metrics for this period
+        $return['period_metrics'] = $this->calculatePeriodMetrics($return, $start, $end);
+
         return $return;
     }
 
@@ -345,8 +393,9 @@ trait PeriodOverview
         // Convert the balance data to the same format as other transaction types
         foreach ($balanceData as $dateKey => $balances) {
             foreach ($balances as $currencyCode => $amount) {
-                if ($currencyCode === 'balance') {
-                    continue; // Skip the main balance key
+                // Skip special balance keys that aren't actual currencies
+                if (in_array($currencyCode, ['balance', 'pc_balance'])) {
+                    continue;
                 }
                 
                 // Get currency info - we need to find the currency by code
@@ -443,6 +492,229 @@ trait PeriodOverview
         }
         
         return $balances;
+    }
+
+    /**
+     * Calculate the net change for a period by summing all transaction types per currency.
+     * Returns the same format as other transaction type arrays.
+     */
+    private function calculateNetChange(array $periodData): array
+    {
+        $netChanges = ['count' => 0];
+        
+        // Get all unique currencies from the period data
+        $currencies = [];
+        foreach (['earned', 'spent', 'transferred_in', 'transferred_away'] as $type) {
+            if (isset($periodData[$type])) {
+                foreach ($periodData[$type] as $currencyId => $entry) {
+                    if ($currencyId !== 'count') {
+                        $currencies[$currencyId] = $entry;
+                    }
+                }
+            }
+        }
+        
+        // Calculate net change for each currency
+        foreach ($currencies as $currencyId => $currencyInfo) {
+            // Get amounts for this currency using the same logic as the Twig template
+            $netEarned = '0';
+            $netSpent = '0';
+            $netTransferredIn = '0';
+            $netTransferredAway = '0';
+            
+            // Get earned amount for this currency (make positive)
+            if (isset($periodData['earned'][$currencyId])) {
+                $amount = $periodData['earned'][$currencyId]['amount'];
+                $netEarned = bccomp($amount, '0') < 0 ? bcmul($amount, '-1') : $amount;
+            }
+            
+            // Get spent amount for this currency (keep as-is, usually negative)
+            if (isset($periodData['spent'][$currencyId])) {
+                $netSpent = $periodData['spent'][$currencyId]['amount'];
+            }
+            
+            // Get transferred in amount for this currency (make positive)
+            if (isset($periodData['transferred_in'][$currencyId])) {
+                $amount = $periodData['transferred_in'][$currencyId]['amount'];
+                $netTransferredIn = bccomp($amount, '0') < 0 ? bcmul($amount, '-1') : $amount;
+            }
+            
+            // Get transferred away amount for this currency (make negative)
+            if (isset($periodData['transferred_away'][$currencyId])) {
+                $amount = $periodData['transferred_away'][$currencyId]['amount'];
+                $netTransferredAway = bccomp($amount, '0') < 0 ? $amount : bcmul($amount, '-1');
+            }
+            
+            // Calculate net change: earned + spent + transferred_in + transferred_away
+            $netChange = bcadd(
+                bcadd($netEarned, $netSpent),
+                bcadd($netTransferredIn, $netTransferredAway)
+            );
+            
+            // Only include if there's a meaningful change
+            if (bccomp($netChange, '0') !== 0) {
+                $netChanges[$currencyId] = [
+                    'amount' => $netChange,
+                    'count' => 1, // Net change is a single calculated "transaction"
+                    'currency_id' => $currencyInfo['currency_id'],
+                    'currency_name' => $currencyInfo['currency_name'],
+                    'currency_code' => $currencyInfo['currency_code'],
+                    'currency_symbol' => $currencyInfo['currency_symbol'],
+                    'currency_decimal_places' => $currencyInfo['currency_decimal_places'],
+                ];
+                $netChanges['count'] += 1;
+            }
+        }
+        
+        return $netChanges;
+    }
+
+    /**
+     * Calculate the opening balance for a period by subtracting the net change from the closing balance.
+     * Returns the same format as other transaction type arrays.
+     */
+    private function calculateOpeningBalance(array $periodData): array
+    {
+        $openingBalances = ['count' => 0];
+        
+        // Get the closing balance (period_balance)
+        if (!isset($periodData['period_balance'])) {
+            return $openingBalances;
+        }
+        
+        $closingBalances = $periodData['period_balance'];
+        
+        // For each currency in the closing balance, calculate the opening balance
+        foreach ($closingBalances as $currencyId => $balanceEntry) {
+            if ($currencyId === 'count') {
+                continue;
+            }
+            
+            // Calculate net change for this currency
+            $netEarned = '0';
+            $netSpent = '0';
+            $netTransferredIn = '0';
+            $netTransferredAway = '0';
+            
+            // Get earned amount for this currency
+            if (isset($periodData['earned'][$currencyId])) {
+                $amount = $periodData['earned'][$currencyId]['amount'];
+                $netEarned = $amount < 0 ? bcmul($amount, '-1') : $amount;
+            }
+            
+            // Get spent amount for this currency (already negative)
+            if (isset($periodData['spent'][$currencyId])) {
+                $netSpent = $periodData['spent'][$currencyId]['amount'];
+            }
+            
+            // Get transferred in amount for this currency
+            if (isset($periodData['transferred_in'][$currencyId])) {
+                $amount = $periodData['transferred_in'][$currencyId]['amount'];
+                $netTransferredIn = $amount < 0 ? bcmul($amount, '-1') : $amount;
+            }
+            
+            // Get transferred away amount for this currency (make it negative)
+            if (isset($periodData['transferred_away'][$currencyId])) {
+                $amount = $periodData['transferred_away'][$currencyId]['amount'];
+                $netTransferredAway = $amount < 0 ? $amount : bcmul($amount, '-1');
+            }
+            
+            // Calculate net change: earned + spent + transferred_in + transferred_away
+            $netChange = bcadd(
+                bcadd($netEarned, $netSpent),
+                bcadd($netTransferredIn, $netTransferredAway)
+            );
+            
+            // Calculate opening balance: closing_balance - net_change
+            $openingAmount = bcsub($balanceEntry['amount'], $netChange);
+            
+            // Add to opening balances array
+            $openingBalances[$currencyId] = [
+                'amount' => $openingAmount,
+                'count' => 1, // Opening balance is a single "transaction"
+                'currency_id' => $balanceEntry['currency_id'],
+                'currency_name' => $balanceEntry['currency_name'],
+                'currency_code' => $balanceEntry['currency_code'],
+                'currency_symbol' => $balanceEntry['currency_symbol'],
+                'currency_decimal_places' => $balanceEntry['currency_decimal_places'],
+            ];
+            $openingBalances['count'] += 1;
+        }
+        
+        return $openingBalances;
+    }
+
+    /**
+     * Calculate financial metrics for the period.
+     * Returns metrics like burn rate, savings rate, and expense ratio.
+     */
+    private function calculatePeriodMetrics(array $periodData, Carbon $start, Carbon $end): array
+    {
+        $metrics = ['count' => 0];
+        $daysInPeriod = $start->diffInDays($end) + 1; // +1 to include both start and end day
+        
+        // Get all unique currencies from the period data
+        $currencies = [];
+        foreach (['earned', 'spent', 'transferred_in', 'transferred_away'] as $type) {
+            if (isset($periodData[$type])) {
+                foreach ($periodData[$type] as $currencyId => $entry) {
+                    if ($currencyId !== 'count') {
+                        $currencies[$currencyId] = $entry;
+                    }
+                }
+            }
+        }
+        
+        // Calculate metrics for each currency
+        foreach ($currencies as $currencyId => $currencyInfo) {
+            // Get amounts for this currency
+            $earned = $periodData['earned'][$currencyId]['amount'] ?? '0';
+            $spent = $periodData['spent'][$currencyId]['amount'] ?? '0';
+            $transferredIn = $periodData['transferred_in'][$currencyId]['amount'] ?? '0';
+            $transferredAway = $periodData['transferred_away'][$currencyId]['amount'] ?? '0';
+            
+            // Calculate total inflows (earned + transferred in)
+            $totalInflows = bcadd($earned, $transferredIn);
+            
+            // Calculate total outflows (spent + transferred away - taking absolute values)
+            $totalOutflows = bcadd(bcmul($spent, '-1'), bcmul($transferredAway, '-1'));
+            
+            // 1. Burn rate (spend only) = expenses ÷ days (lifestyle spending velocity)
+            $burnRate = $daysInPeriod > 0 ? bcdiv(bcmul($spent, '-1'), (string)$daysInPeriod, $currencyInfo['currency_decimal_places']) : '0';
+            
+            // 2. Net burn (total cash out) = (outflows - inflows) ÷ days (how fast cash balance changes)
+            $netCashOut = bcsub($totalOutflows, $totalInflows);
+            $netBurn = $daysInPeriod > 0 ? bcdiv($netCashOut, (string)$daysInPeriod, $currencyInfo['currency_decimal_places']) : '0';
+            
+            // 3. Savings/transfer rate = transfers out ÷ inflows
+            $savingsRate = bccomp($totalInflows, '0') > 0 ? 
+                bcdiv(bcmul($transferredAway, '-1'), $totalInflows, 4) : '0';
+            
+            // 4. Expense ratio = expenses ÷ inflows
+            $expenseRatio = bccomp($totalInflows, '0') > 0 ? 
+                bcdiv(bcmul($spent, '-1'), $totalInflows, 4) : '0';
+            
+            // Only include metrics if there's meaningful data
+            if (bccomp($totalInflows, '0') > 0 || bccomp($totalOutflows, '0') > 0) {
+                $metrics[$currencyId] = [
+                    'burn_rate' => $burnRate,
+                    'net_burn' => $netBurn,
+                    'savings_rate' => $savingsRate,
+                    'expense_ratio' => $expenseRatio,
+                    'days_in_period' => $daysInPeriod,
+                    'total_inflows' => $totalInflows,
+                    'total_outflows' => $totalOutflows,
+                    'currency_id' => $currencyInfo['currency_id'],
+                    'currency_name' => $currencyInfo['currency_name'],
+                    'currency_code' => $currencyInfo['currency_code'],
+                    'currency_symbol' => $currencyInfo['currency_symbol'],
+                    'currency_decimal_places' => $currencyInfo['currency_decimal_places'],
+                ];
+                $metrics['count']++;
+            }
+        }
+        
+        return $metrics;
     }
 
     private function filterStatistics(Carbon $start, Carbon $end, string $type): Collection

@@ -217,9 +217,10 @@ Route::group(
 
         // show
         Route::get('show/{account}/all', ['uses' => 'Account\ShowController@showAll', 'as' => 'show.all']);
-        Route::get('show/{account?}/{start_date?}/{end_date?}', ['uses' => 'Account\ShowController@show', 'as' => 'show'])
+        Route::get('show/{account?}/{start_date?}/{end_date?}/{transaction_type?}', ['uses' => 'Account\ShowController@show', 'as' => 'show'])
             ->where(['start_date' => DATEFORMAT])
             ->where(['end_date' => DATEFORMAT])
+            ->where(['transaction_type' => 'all|withdrawals?|deposits?|transfers?|income|expenses?|opening_balance|reconciliations?|special'])
         ;
 
         // reconcile routes:

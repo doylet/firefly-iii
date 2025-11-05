@@ -33,6 +33,7 @@ use FireflyIII\Repositories\Account\AccountRepositoryInterface;
 use FireflyIII\Support\Debug\Timer;
 use FireflyIII\Support\Facades\Steam;
 use FireflyIII\Support\Http\Controllers\PeriodOverview;
+use FireflyIII\Support\Http\Api\TransactionFilter;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class ShowController extends Controller
 {
     use PeriodOverview;
+    use TransactionFilter;
 
     private AccountRepositoryInterface $repository;
 
@@ -84,7 +86,7 @@ class ShowController extends Controller
      * @throws FireflyException
      * @throws NotFoundExceptionInterface
      */
-    public function show(Request $request, Account $account, ?Carbon $start = null, ?Carbon $end = null)
+    public function show(Request $request, Account $account, ?Carbon $start = null, ?Carbon $end = null, ?string $transactionType = null)
     {
         if (0 === $account->id) {
             throw new NotFoundHttpException();
@@ -97,6 +99,8 @@ class ShowController extends Controller
 
         $start ??= session('start');
         $end   ??= session('end');
+        // Handle transaction type from either path parameter or query parameter
+        $transactionType ??= $request->get('type', 'all');
 
         /** @var Carbon $start */
         /** @var Carbon $end */
@@ -144,6 +148,9 @@ class ShowController extends Controller
         Log::debug('Collect transactions');
         $timer->start('collection');
 
+        // Get transaction types to filter by
+        $transactionTypes = $this->mapTransactionTypes($transactionType);
+        
         /** @var GroupCollectorInterface $collector */
         $collector        = app(GroupCollectorInterface::class);
         $collector
@@ -153,6 +160,7 @@ class ShowController extends Controller
             ->withAttachmentInformation()
             ->withAPIInformation()
             ->setRange($start, $end)
+            ->setTypes($transactionTypes)
         ;
         // this search will not include transaction groups where this asset account (or liability)
         // is just part of ONE of the journals. To force this:
@@ -162,7 +170,7 @@ class ShowController extends Controller
 
         Log::debug('End collect transactions');
         $timer->stop('collection');
-        $groups->setPath(route('accounts.show', [$account->id, $start->format('Y-m-d'), $end->format('Y-m-d')]));
+        $groups->setPath(route('accounts.show', [$account->id, $start->format('Y-m-d'), $end->format('Y-m-d'), $transactionType]));
         $showAll          = false;
         $now              = today()->endOfDay();
         if ($now->gt($end) || $now->lt($start)) {
@@ -171,7 +179,17 @@ class ShowController extends Controller
 
         // 2025-10-08 replace finalAccountBalance with accountsBalancesOptimized.
         $balances         = Steam::accountsBalancesOptimized(new Collection()->push($account), $now)[$account->id];
-        // $balances         = Steam::filterAccountBalance(Steam::finalAccountBalance($account, $now), $account, $this->convertToPrimary, $accountCurrency);
+        
+        // Available transaction types for the filter dropdown
+        $availableTypes = [
+            'all' => 'All transactions',
+            'withdrawals' => 'Withdrawals/Expenses',
+            'deposits' => 'Deposits/Income', 
+            'transfers' => 'Transfers',
+            'opening_balance' => 'Opening Balance',
+            'reconciliations' => 'Reconciliations',
+            'special' => 'Special transactions'
+        ];
 
         return view(
             'accounts.show',
@@ -190,7 +208,9 @@ class ShowController extends Controller
                 'end',
                 'chartUrl',
                 'location',
-                'balances'
+                'balances',
+                'transactionType',
+                'availableTypes'
             )
         );
     }
